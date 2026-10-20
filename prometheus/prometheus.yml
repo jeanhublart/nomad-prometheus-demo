@@ -1,0 +1,42 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  # Single scrape job: every Nomad service tagged "prometheus-metrics",
+  # Prometheus included. No target is hard-coded.
+  - job_name: "nomad-services"
+    nomad_sd_configs:
+      - server: "http://host.docker.internal:4646"
+        refresh_interval: 10s                      # default is 60s, too slow for a demo
+        authorization:                             # sent as "Authorization: Bearer <token>"
+          credentials_file: /secrets/nomad_token   # rendered by Nomad from a Nomad Variable
+
+    relabel_configs:
+      # Opt-in: keep only services tagged "prometheus-metrics".
+      # Tags come as ",tag1,tag2,", so the commas guarantee an exact match.
+      - source_labels: [__meta_nomad_tags]
+        regex: ".*,prometheus-metrics,.*"
+        action: keep
+
+      # Optional metrics path through a "metrics-path=/path" tag (defaults to /metrics).
+      - source_labels: [__meta_nomad_tags]
+        regex: ".*,metrics-path=([^,]+),.*"
+        target_label: __metrics_path__
+
+      # Local demo only (Nomad -dev on macOS with Docker Desktop): services are
+      # registered on 127.0.0.1, which is unreachable from this container.
+      # On a real cluster this rule never matches.
+      - source_labels: [__address__]
+        regex: '127\.0\.0\.1:(\d+)'
+        target_label: __address__
+        replacement: "host.docker.internal:${1}"
+
+      # Readable labels (job = Nomad service name)
+      - source_labels: [__meta_nomad_service]
+        target_label: job
+      - source_labels: [__meta_nomad_service_job_id]
+        target_label: nomad_job
+      - source_labels: [__meta_nomad_service_alloc_id]
+        target_label: nomad_alloc
+      - source_labels: [__meta_nomad_dc]
+        target_label: nomad_dc
